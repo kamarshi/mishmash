@@ -1,0 +1,8 @@
+Problem: Take two dictionary -legal words and find the shortest path
+from one to the other.  Each transition should include changing one
+character only and the resulting word should be a dictionary-legal
+word.  Log the pathway from first to second word.
+
+Argument: a breadth first search will uncover the shortest pathway
+from first string to second
+
