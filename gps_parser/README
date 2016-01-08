@@ -1,0 +1,7 @@
+Do the following:
+
+1. make
+2. ./gps_parser_main -i sample3.txt -o sample3.out
+3. python gps_parser.py (this will generate sample3.ref)
+4. python compare.py - should return with "Success!" message
+

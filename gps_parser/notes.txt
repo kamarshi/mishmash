@@ -1,0 +1,115 @@
+Notes on NMEA project
+
+Decimal notation for lattitude:
+North is positive, south is negative
+
+Decimal notation for longitude:
+West is negative, east is postive
+
+Conversion from degrees notation to decimal:
+deg_decimal = degrees + mins/60 + seconds/3600
+
+Not checking for:
+1) Out of range values - like UTC hour in 0-23, mins in 0-59 etc.  Assuming
+  checksum would take care of that
+2) Out of range values - like lat values larger than 90 or lon values larger
+   than 180
+3) Found some 'GPGLL' data without time field.  No documentation on if this
+   is legal - so ignored these types of sentences
+4) Coding challenge document RMC example shows latitude and longitude with
+   multiple fractional bits - NMEA-0183 document shows only two fractional
+   digits - retaining 7 digits of fractional precision
+
+First wrote a parser in python to understand the problem.  Also, this parser
+was useful in debugging the C code.  But more importantly, used this parser
+as a basis for a sentence generator.  In the field, different types of
+malformed sentences could be encountered.  A generator tool is useful for
+creating malformed data.  This was not done, as I am not sure what type of
+malformations to expect.
+
+Manifest:
+1.  Sample sentence files: sample1.txt is from Getaround.  sample2.txt is
+    data collected online.  sample3.txt is sample2.txt data with additional
+    sentences randomly generated (UTC, LAT, LON were changed to legal values)
+2.  gps_parser.py - Parser written in Python, to generate reference output
+3.  gps_generator.py - Derived from parser.  Is capable of generating random
+    but legal output - as well as malformed output
+4.  gps_parser.h, gps_parser.c - Parser code in C
+5.  gps_main.c - sample application to exercise the parser and generate test
+    output
+6.  compare.py - compares python parser generated output (sample*.ref) against
+    C parser generated output (sample*.out)
+
+Notes on time:
+
+Here is the time spent:
+1. 1-2 hours reading up NMEA spec, looking online for samples and gathering
+   sample data.
+2. 4 hours - Python based parser and generator
+3. 2 hours - C code based parser
+4. 1 hour - C code debug and compare tool to verify correct execution 
+
+Sample data collected from:
+http://www.gpsinformation.org/dale/nmea.htm
+http://aprs.gids.nl/nmea/
+
+
+
+GGA Global Positioning System Fix Data. Time, Position and fix related data
+for a GPS receiver
+11
+1 2 3 4 5 6 7 8 9 10 | 12 13 14 15
+| | | | | | | | | | | | | | |
+$--GGA,hhmmss.ss,llll.ll,a,yyyyy.yy,a,x,xx,x.x,x.x,M,x.x,M,x.x,xxxx*hh
+1) Time (UTC)
+2) Latitude
+3) N or S (North or South)
+4) Longitude
+5) E or W (East or West)
+6) GPS Quality Indicator,
+0 - fix not available,
+1 - GPS fix,
+2 - Differential GPS fix
+7) Number of satellites in view, 00 - 12
+8) Horizontal Dilution of precision
+9) Antenna Altitude above/below mean-sea-level (geoid)
+10) Units of antenna altitude, meters
+11) Geoidal separation, the difference between the WGS-84 earth
+ellipsoid and mean-sea-level (geoid), "-" means mean-sea-level below ellipsoid
+12) Units of geoidal separation, meters
+13) Age of differential GPS data, time in seconds since last SC104
+type 1 or 9 update, null field when DGPS is not used
+14) Differential reference station ID, 0000-1023
+15) Checksum
+
+
+GLL Geographic Position – Latitude/Longitude
+1 2 3 4 5 6 7
+| | | | | | |
+$--GLL,llll.ll,a,yyyyy.yy,a,hhmmss.ss,A*hh
+1) Latitude
+2) N or S (North or South)
+3) Longitude
+4) E or W (East or West)
+5) Time (UTC)
+6) Status A - Data Valid, V - Data Invalid
+7) Checksum
+
+
+RMC Recommended Minimum Navigation Information
+12
+1 2 3 4 5 6 7 8 9 10 11|
+| | | | | | | | | | | |
+$--RMC,hhmmss.ss,A,llll.ll,a,yyyyy.yy,a,x.x,x.x,xxxx,x.x,a*hh
+1) Time (UTC)
+2) Status, V = Navigation receiver warning
+3) Latitude
+4) N or S
+5) Longitude
+6) E or W
+7) Speed over ground, knots
+8) Track made good, degrees true
+9) Date, ddmmyy
+10) Magnetic Variation, degrees
+11) E or W
+12) Checksum
