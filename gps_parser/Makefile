@@ -4,9 +4,9 @@ CFLAGS=-I.
 
 LIBS=-lm
 
-DEPS = gps_parser.h
+DEPS = gps_parser.h gps_buffer.h
 
-OBJ = gps_parser.o
+OBJ = gps_parser.o gps_writer.o
 
 APPS = gps_parse_main
 
