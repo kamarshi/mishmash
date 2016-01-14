@@ -6,12 +6,22 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #include "./gps_parser.h"
+#include "./gps_buffer.h"
 
-#define ENDOFDATA 1
 
-#define RD_BUF_SIZE 1024
+/*
+ * If parser thread goes to wait on an empty
+ * readbuf, wake it up when this level is reached
+ */
+#define PARSE_THOLD 256
+
+pthread_t thread_parser;
+
+pthread_t thread_filler;
+
 
 typedef enum {
     INVLD,
@@ -39,21 +49,38 @@ typedef struct locTime_t {
  * Input buffer - readbuf - is controlled by this
  * structure.  Buffer is filled when empty.  Lines'
  * worth of bytes are copied to caller supplied
- * buffer.  While copying, if readbuf runs out, more
- * data is automatically pulled in from infd
+ * buffer.  While copying, if readbuf runs out,
+ * parser thread goes to sleep, waiting for filler
+ * thread to wake it up
  */
 typedef struct bufCtrl_t {
     // input file handle
     int   infd;
 
-    // pointer to next byte in buffer
-    char* pBuf;
+    // buffer write pointer
+    int   windx;
+
+    // buffer read pointer
+    int   rindx;
+
+    /*
+     * Lock to ensure reader and writer serialization
+     */
+    pthread_mutex_t bufLock;
+
+    /*
+     * Condition variable to wake up sleeping parser
+     */
+    pthread_cond_t  bufReady;
 
     // bytes left in buffer
     int   left;
 
-    // Found end of file
-    int   eof;
+    // Found end of data - parser
+    int   peod;
+
+    // Found end of data - filler
+    int   feod;
 } bufCtrl;
 
 
@@ -67,65 +94,141 @@ void  init_buf_ctrl(int infd)
 {
     rbCtrl.infd = infd;
 
-    rbCtrl.pBuf = readbuf;
+    rbCtrl.windx = 0;
+
+    rbCtrl.rindx = 0;
+
+    pthread_cond_init(&rbCtrl.bufReady, NULL);
+
+    pthread_mutex_init(&rbCtrl.bufLock, NULL);
 
     rbCtrl.left = 0;
 
-    rbCtrl.eof = 0;
+    rbCtrl.peod = 0;
+
+    rbCtrl.feod = 0;
 }
 
 
-void  clr_buf_ctrl(void)
+/*
+ * Following function executes in fillter thread
+ * context. It reads bytes from read side of pipe
+ * and fills readbuf.  If readbuf level crosses
+ * PARSE_THOLD, a pthread_cond_signal is emitted
+ * to wake up a potentially sleeping parser thread
+ */
+void* buf_filler(void* param)
 {
-    rbCtrl.pBuf = readbuf;
+    unsigned char nxt_byte = '\0';
 
-    rbCtrl.left = 0;
+    int  count;
+
+    printf("Starting up buf filler thread\n");
+
+    while (rbCtrl.feod == 0) {
+        count = read(rbCtrl.infd, &nxt_byte, 1);
+
+        pthread_mutex_lock(&rbCtrl.bufLock);
+
+        if (count == 0) {
+            printf("Warning!: Missing end-of-data marker?\n");
+
+            nxt_byte = '\0';
+
+            rbCtrl.feod = 1;
+        }
+        // If this happens also to be at PARSE_THOLD, two
+        // bufReady signals will be generated.  This is okay,
+        // as these condition variables don't keep state
+        if (nxt_byte == END_OF_DATA) {
+            pthread_cond_signal(&rbCtrl.bufReady);
+
+            nxt_byte = '\0';
+
+            rbCtrl.feod = 1;
+        }
+        readbuf[rbCtrl.rindx++] = (char) nxt_byte;
+
+        rbCtrl.left++;
+
+        if (rbCtrl.left == RD_BUF_SIZE) {
+            printf("Error!: Buffer overflow - exiting\n");
+
+            exit(-1);
+        }
+        if (rbCtrl.left == PARSE_THOLD)
+            pthread_cond_signal(&rbCtrl.bufReady);
+
+        pthread_mutex_unlock(&rbCtrl.bufLock);
+
+        rbCtrl.rindx %= RD_BUF_SIZE;
+    }
+    printf("Buf filler thread exiting\n");
 }
 
 
-int  replenish_buf(void)
-{
-    if (rbCtrl.left != 0)
-        return ERR;
-
-    clr_buf_ctrl();
-
-    int actual;
-
-    actual = read(rbCtrl.infd, readbuf, RD_BUF_SIZE);
-
-    rbCtrl.left = actual;
-
-    return actual;
-}
-
-
+/*
+ * All functions below execute in parser thread
+ * context
+ */
+/*
+ * Called by parser thread, which will go to
+ * sleep if zero bytes are left
+ */
 char get_next_byte(void)
 {
+    char nxt_byte;
+
+    pthread_mutex_lock(&rbCtrl.bufLock);
+
     if (rbCtrl.left) {
+
         rbCtrl.left--;
 
-        return *rbCtrl.pBuf++;
+        nxt_byte = readbuf[rbCtrl.windx++];
+
+        pthread_mutex_unlock(&rbCtrl.bufLock);
+
+        rbCtrl.windx %= RD_BUF_SIZE;
     }
     else {
-        int actual = replenish_buf();
+        // Buffer is empty, go to sleep until some bytes
+        // are collected, or end-of-data
+        // Atomically also unlocks mutex
+        if (rbCtrl.feod == 1) {
+            // No more data forthcoming, so quit
+            rbCtrl.peod = 1;
 
-        if (actual) {
-            rbCtrl.left--;
+            pthread_mutex_unlock(&rbCtrl.bufLock);
 
-            return *rbCtrl.pBuf++;
+            return '\0';
         }
-        else
-            rbCtrl.eof = 1;
+        pthread_cond_wait(&rbCtrl.bufReady, &rbCtrl.bufLock);
+
+        // If here, buf is locked and we have data
+        // even if it is end of data marker
+        if (rbCtrl.left == 0) {
+            printf("Buffer control error!\n");
+
+            printf("rindx: %d; windx: %d; left: %d\n", rbCtrl.rindx, rbCtrl.windx, rbCtrl.left);
+
+            exit(-1);
+        }
+        rbCtrl.left--;
+
+        nxt_byte = readbuf[rbCtrl.windx++];
+
+        pthread_mutex_unlock(&rbCtrl.bufLock);
+
+        rbCtrl.windx %= RD_BUF_SIZE;
     }
-    // [TODO] Need to figure out if this is a problem
-    return '\0';
+    return nxt_byte;
 }
 
 
-int  is_eof()
+int  is_eod()
 {
-    return rbCtrl.eof;
+    return rbCtrl.peod;
 }
 
 
@@ -137,7 +240,7 @@ int  get_next_line(char* pLine)
 
     char* pLn = pLine;
 
-    while (!is_eof()) {
+    while (!is_eod()) {
         data = get_next_byte();
 
         *pLn++ = data;
@@ -152,8 +255,8 @@ int  get_next_line(char* pLine)
             return OK;
         }
     }
-    // must be eof
-    return ENDOFDATA;
+    // must be eod
+    return END_OF_DATA;
 }
 
 
@@ -373,7 +476,7 @@ int  parse_sentence(sentID sid, char* pLine, locTime* pLT)
 /*
  * Public API function
  */
-int  gps_parse(FILE* outfp)
+void*  gps_parse(void* param)
 {
     char line[256];
 
@@ -389,11 +492,22 @@ int  gps_parse(FILE* outfp)
 
     char*    pC;
 
-    sentID   sid = INVLD;
+    FILE*    outfp;
+
+    sentID   sid;
+
+    printf("Parser thread starting\n");
+
+    outfp = (FILE*) param;
+
+    sid = INVLD;
 
     while (1) {
-        if ((retval = get_next_line(line)) == ENDOFDATA)
-            return OK;
+        if ((retval = get_next_line(line)) == END_OF_DATA) {
+            printf("Parser thread exiting at end of data\n");
+
+            pthread_exit(NULL);
+        }
 
         // Process line
         length = strlen(line);

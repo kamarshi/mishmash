@@ -3,6 +3,8 @@
 
 #define RD_BUF_SIZE 1024
 
+#define END_OF_DATA 255
+
 extern char readbuf[RD_BUF_SIZE];
 
 

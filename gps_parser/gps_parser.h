@@ -6,6 +6,10 @@
 #define ERR -1
 
 
+extern pthread_t thread_parser;
+
+extern pthread_t thread_filler;
+
 /*
  * Reader side API
  */
@@ -16,9 +20,16 @@ extern void  init_buf_ctrl(int infd);
 
 
 /*
- * Public API function
+ * Public API parser thread
  */
-extern int  gps_parse(FILE* outfp);
+extern void*  gps_parse(void* param);
+
+
+/*
+ * Public API buf filler thread
+ */
+extern void*  buf_filler(void* param);
+
 
 /*
  * Writer side API

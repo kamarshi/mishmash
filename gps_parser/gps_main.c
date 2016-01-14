@@ -26,6 +26,8 @@ main(int argc, char**argv)
 
     FILE* outfp;
 
+    int retval;
+
     opterr = 0;
 
     while ((c = getopt(argc, argv, "i:o:")) != -1) {
@@ -79,9 +81,28 @@ main(int argc, char**argv)
 
         init_buf_ctrl(infd[0]);
 
-        gps_parse(outfp);
-    }
+        /*
+         * Create and launch reader side threads
+         */
+        retval = pthread_create(&thread_filler, NULL, buf_filler, (void *) NULL);
 
+        if (retval) {
+            printf("Buffer filler thread creation failed with error: %d\n", retval);
+
+            exit(-1);
+        }
+
+        retval = pthread_create(&thread_parser, NULL, gps_parse, (void *) outfp);
+
+        if (retval) {
+            printf("Parser thread creation failed with error: %d\n", retval);
+
+            exit(-1);
+        }
+        pthread_join(thread_filler, NULL);
+
+        pthread_join(thread_parser, NULL);
+    }
 
     // close files
 }

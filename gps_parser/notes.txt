@@ -34,10 +34,13 @@ Manifest:
 2.  gps_parser.py - Parser written in Python, to generate reference output
 3.  gps_generator.py - Derived from parser.  Is capable of generating random
     but legal output - as well as malformed output
-4.  gps_parser.h, gps_parser.c - Parser code in C
+4.  gps_parser.h, gps_parser.c - Parser code in C, including a buffer filler
+    thread that reads from a pipe and maintains a buffer of bytes
 5.  gps_main.c - sample application to exercise the parser and generate test
     output
-6.  compare.py - compares python parser generated output (sample*.ref) against
+6.  gps_writer.c, gps_buffer.h - code to simulate bytes streaming into parser.
+    Reads data from file and meters data out to the write side of a pipe
+7.  compare.py - compares python parser generated output (sample*.ref) against
     C parser generated output (sample*.out)
 
 Notes on time:

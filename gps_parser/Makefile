@@ -2,7 +2,7 @@ CC=gcc
 CFLAGS=-I.
 
 
-LIBS=-lm
+LIBS=-lm -lpthread
 
 DEPS = gps_parser.h gps_buffer.h
 

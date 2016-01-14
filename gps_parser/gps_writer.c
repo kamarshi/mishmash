@@ -25,18 +25,37 @@ int  fill_pipe(int pfd, int ffd)
 
     int retval;
 
+    int i;
+
+    unsigned char endofdata = END_OF_DATA;
+
     while (1) {
         if ((actual = read(ffd, readbuf, BR_BUF_SIZE)) != 0) {
             printf("Bytes read from file: %d\n", actual);
 
-            if ((retval = write(pfd, readbuf, actual)) < 0) {
-                printf("Error writing pipe: %d\n", errno);
+            for (i = 0; i < actual; i++) {
+                if ((retval = write(pfd, &readbuf[i], 1)) < 0) {
+                    printf("Error writing pipe: %d\n", errno);
 
-                exit(-1);
+                    exit(-1);
+                }
+                // Sleep for 1 msec
+                usleep(1000);
             }
-            printf("Bytes written to pipe: %d\n", retval);
+            printf("Bytes written to pipe: %d\n", actual);
 
-            sleep(1);
+            if (actual < BR_BUF_SIZE) {
+                printf("Writing end of data marker to pipe\n");
+
+                if ((retval = write(pfd, &endofdata, 1)) < 0) {
+                    printf("Error writing pipe: %d\n", errno);
+
+                    exit(-1);
+                }
+            }
+
+            // Sleep for 400 msec, adding up to 1 sec total
+            usleep(400000);
         }
         else
             break;

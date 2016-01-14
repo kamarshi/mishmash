@@ -5,6 +5,7 @@ import os
 import sys
 
 def  compare(infname, outfname):
+    print 'Comparing files - ', infname, ' and ', outfname
 
     infp = open(infname)
 
@@ -31,12 +32,12 @@ def  compare(infname, outfname):
 
             return
 
-        if abs(float(inl[1]) - float(outl[1])) > 0.02:
+        if abs(float(inl[1]) - float(outl[1])) > 0.001:
             print 'Lat values are different: ', inl[1], '   ', outl[1]
 
             return
 
-        if abs(float(inl[2]) - float(outl[2])) > 0.02:
+        if abs(float(inl[2]) - float(outl[2])) > 0.001:
             print 'Lon values are different: ', inl[2], '   ', outl[2]
 
             return
